@@ -1,0 +1,393 @@
+---
+title: "TIME SERIES FINAL PROJECT"
+author: "Jani Shariff Shaik"
+date: "2024-12-13"
+output: word_document
+---
+```{r}
+# Load required libraries
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(dplyr)
+library(zoo)
+library(lubridate)
+
+
+# Load the dataset
+df <- read.csv("C:/Users/janis/OneDrive/Desktop/Final Project/Time Series/renewable_energy_monthly_data.csv")
+
+# Convert 'Date' to Date format
+df$Date <- as.Date(df$Date, format = "%d-%m-%Y")
+
+# Set Date as the index
+df <- df %>% arrange(Date)  # Ensure data is sorted by Date
+
+# Preview the dataset
+head(df)
+data<-df
+
+```
+```{r}
+str(data)
+summary(data)
+
+```
+```{r}
+total_nulls <- sum(is.na(data))
+print(total_nulls)
+```
+HANDLING OUTLIERS
+```{r}
+# Calculate the Interquartile Range (IQR)
+Q1 <- quantile(data$Energy_Production_MWh, 0.25)
+Q3 <- quantile(data$Energy_Production_MWh, 0.75)
+IQR <- Q3 - Q1
+
+# Define the outlier bounds
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+# Identify outliers
+outliers <- data$Energy_Production_MWh[data$Energy_Production_MWh < lower_bound | 
+                                       data$Energy_Production_MWh > upper_bound]
+
+# Count the number of outliers
+num_outliers <- length(outliers)
+cat("Number of Outliers:", num_outliers, "\n")
+
+```
+```{r}
+# Boxplot to visualize outliers
+ggplot(data, aes(y = Energy_Production_MWh)) +
+  geom_boxplot(fill = "blue", color = "black", outlier.color = "red", outlier.size = 2) +
+  labs(title = "Boxplot of Energy Production ", 
+       y = "Energy Production (MWh)") +
+  theme_minimal()
+
+```
+3. Exploratory Data Analysis
+3.1 Summary Statistics and Data Visualization
+```{r}
+# Summary statistics
+summary(data$Energy_Production_MWh)
+
+# Plot energy production over time
+ggplot(data, aes(x = Date, y = Energy_Production_MWh)) +
+  geom_line(color = "blue") +
+  labs(title = "Energy Production Over Time", x = "Date", y = "Energy Production (MWh)") +
+  theme_minimal()
+
+# Histogram of energy production
+ggplot(data, aes(x = Energy_Production_MWh)) +
+  geom_histogram(binwidth = 500, fill = "blue", color = "black") +
+  labs(title = "Distribution of Energy Production", x = "Energy Production (MWh)", y = "Frequency") +
+  theme_minimal()
+
+```
+
+3.2 Seasonality Strength Calculation
+```{r}
+data$Date <- as.Date(data$Date, format = "%d-%m-%Y")
+data <- data %>% arrange(Date)
+energy_ts <- ts(data$Energy_Production_MWh, 
+                start = c(year(min(data$Date)), month(min(data$Date))), 
+                frequency = 12)
+# Decompose the time series (multiplicative)
+decomposed <- decompose(energy_ts, type = "multiplicative")
+
+# Seasonality strength
+seasonality_strength <- var(decomposed$seasonal, na.rm = TRUE) /
+                        var(data$Energy_Production_MWh, na.rm = TRUE)
+cat("Seasonality Strength:", seasonality_strength, "\n")
+
+```
+```{r}
+head(energy_ts)
+```
+
+3.3 Visualize Rolling Statistics
+```{r}
+# Calculate rolling mean and rolling standard deviation
+rolling_mean <- rollmean(data$Energy_Production_MWh, k = 12, fill = NA) # 12-month rolling mean
+rolling_std <- rollapply(data$Energy_Production_MWh, width = 12, FUN = sd, fill = NA) # 12-month rolling std
+
+# Plot rolling statistics
+ggplot() +
+  geom_line(aes(x = data$Date, y = data$Energy_Production_MWh), color = "blue") +
+  geom_line(aes(x = data$Date, y = rolling_mean), color = "red") +
+  geom_line(aes(x = data$Date, y = rolling_std), color = "black") +
+  labs(title = "Rolling Mean & Standard Deviation", x = "Date", y = "Energy Production (MWh)") +
+  theme_minimal()
+
+
+```
+Stationarity Testing and Transformation
+```{r}
+# Augmented Dickey-Fuller test
+adf_test <- adf.test(energy_ts, alternative = "stationary")
+cat("ADF Test p-value:", adf_test$p.value, "\n")
+
+# Log transformation if variance increases with trend
+log_energy_ts <- log(energy_ts)
+
+# Differencing if non-stationary
+diff_energy_ts <- diff(log_energy_ts)
+plot(diff_energy_ts, main = "Differenced Time Series")
+
+```
+plots
+```{r}
+# Plot original time series
+plot(energy_ts, main = "Original Time Series", ylab = "Energy Production (MWh)", xlab = "Time", col = "blue")
+
+# Plot log-transformed time series
+plot(log_energy_ts, main = "Log-Transformed Time Series", ylab = "Log of Energy Production (MWh)", xlab = "Time", col = "blue")
+
+# Plot differenced time series
+plot(diff_energy_ts, main = "Differenced Time Series", ylab = "Differenced Log of Energy Production", xlab = "Time", col = "red")
+
+```
+ACF AND PACF
+```{r}
+# Original time series
+plot(energy_ts, main = "Original Time Series", ylab = "Energy Production (MWh)", xlab = "Time", col = "blue")
+
+# Log-transformed time series
+log_energy_ts <- log(energy_ts)
+plot(log_energy_ts, main = "Log-Transformed Time Series", ylab = "Log of Energy Production (MWh)", xlab = "Time", col = "green")
+
+# Differenced time series
+diff_energy_ts <- diff(log_energy_ts)
+plot(diff_energy_ts, main = "Differenced Time Series", ylab = "Differenced Log of Energy Production", xlab = "Time", col = "red")
+
+# ACF and PACF for differenced data
+acf(diff_energy_ts, main = "ACF of Differenced Series")
+pacf(diff_energy_ts, main = "PACF of Differenced Series")
+
+```
+ACF AND PACF
+```{r}
+# Plot ACF with proper lags
+acf(diff_energy_ts, lag.max = 24, main = "ACF of Differenced Series", xaxt = "n") # Lag.max specifies maximum lag
+axis(1, at = seq(0, 24, by = 1)) # Customize x-axis labels to display actual lags
+
+# Plot PACF with proper lags
+pacf(diff_energy_ts, lag.max = 24, main = "PACF of Differenced Series", xaxt = "n") # Lag.max specifies maximum lag
+axis(1, at = seq(0, 24, by = 1)) # Customize x-axis labels to display actual lags
+
+```
+
+5. Build ARIMA and SARIMA Models
+5.1 Grid Search for ARIMA Parameters
+```{r}
+best_fit <- list()
+min_aic <- Inf
+for (p in 0:3) {
+  for (d in 0:2) {
+    for (q in 0:3) {
+      model <- try(Arima(energy_ts, order = c(p, d, q)), silent = TRUE)
+      if (!inherits(model, "try-error") && model$aic < min_aic) {
+        min_aic <- model$aic
+        best_fit <- list(p = p, d = d, q = q)
+      }
+    }
+  }
+}
+
+# Print the best ARIMA parameters
+print(paste("Best ARIMA Parameters: p =", best_fit$p, ", d =", best_fit$d, ", q =", best_fit$q))
+
+```
+5.2 Fit and Evaluate ARIMA
+```{r}
+# Fit ARIMA model
+arima_model <- Arima(energy_ts, order = c(best_fit$p, best_fit$d, best_fit$q))
+summary(arima_model)
+
+# Residual diagnostics
+checkresiduals(arima_model)
+
+```
+5.3 Fit and Evaluate SARIMA
+```{r}
+# Fit SARIMA model
+sarima_model <- Arima(energy_ts, order = c(2, 1, 2), seasonal = c(0, 1, 1))
+summary(sarima_model)
+
+# Residual diagnostics
+checkresiduals(sarima_model)
+
+```
+6. Forecasting and Evaluation
+6.1 Forecast Using SARIMA
+```{r}
+# Split data into training and testing sets
+train <- window(energy_ts, end = c(2018, 12))
+test <- window(energy_ts, start = c(2019, 1))
+
+# Forecast for the testing period
+sarima_forecast <- forecast(sarima_model, h = length(test))
+
+# Plot forecast vs actual
+autoplot(sarima_forecast) +
+  autolayer(test, series = "Actual") +
+  labs(title = "SARIMA Forecast vs Actual", x = "Time", y = "Energy Production (MWh)") +
+  theme_minimal()
+
+```
+6.2 Calculate Forecasting Accuracy
+```{r}
+# Perform Time Series Cross-Validation
+time_series_cv <- function(ts_data, initial_window, horizon, step) {
+  results <- data.frame(Fold = numeric(), RMSE = numeric(), MAE = numeric(), MAPE = numeric())
+  
+  for (i in seq(initial_window, length(ts_data) - horizon, by = step)) {
+    train <- ts_data[1:i]
+    test <- ts_data[(i + 1):(i + horizon)]
+    
+    # Fit SARIMA model
+    sarima_model <- auto.arima(train, seasonal = TRUE)
+    
+    # Forecast for the horizon
+    forecasted <- forecast(sarima_model, h = horizon)$mean
+    
+    # Calculate metrics
+    rmse <- sqrt(mean((test - forecasted)^2))
+    mae <- mean(abs(test - forecasted))
+    mape <- mean(abs((test - forecasted) / test)) * 100
+    
+    results <- rbind(results, data.frame(Fold = i, RMSE = rmse, MAE = mae, MAPE = mape))
+  }
+  
+  return(results)
+}
+
+# Apply Cross-Validation on Energy Production Time Series
+initial_window <- 96  # First 8 years for training
+horizon <- 12         # Forecasting horizon (12 months)
+step <- 12            # Step size (1 year)
+
+cv_results <- time_series_cv(energy_ts, initial_window, horizon, step)
+print(cv_results)
+
+# Calculate average metrics
+cat("Average RMSE:", mean(cv_results$RMSE), "\n")
+cat("Average MAE:", mean(cv_results$MAE), "\n")
+cat("Average MAPE:", mean(cv_results$MAPE), "\n")
+
+
+```
+
+7. Forecast Future Energy Production
+```{r}
+library(lubridate)  # For working with date components
+
+# Dynamic Forecast Updates Function
+dynamic_forecast_update <- function(data, current_date, forecast_horizon) {
+  # Extract data up to the current date
+  updated_data <- data[data$Date <= current_date, ]
+  
+  # Convert to time series
+  updated_ts <- ts(updated_data$Energy_Production_MWh, 
+                   start = c(year(min(updated_data$Date)), month(min(updated_data$Date))), 
+                   frequency = 12)
+  
+  # Fit SARIMA model
+  sarima_model <- auto.arima(updated_ts, seasonal = TRUE)
+  
+  # Forecast for the horizon
+  future_forecast <- forecast(sarima_model, h = forecast_horizon)
+  
+  # Plot the forecast
+  autoplot(future_forecast) +
+    labs(title = paste("Dynamic Forecast from", current_date), x = "Time", y = "Energy Production (MWh)") +
+    theme_minimal()
+  
+  return(future_forecast)
+}
+
+# Example: Dynamic Forecast for Next 12 Months
+dynamic_forecast <- dynamic_forecast_update(data, as.Date("2020-12-31"), 12)
+print(dynamic_forecast)
+
+# Plot the forecast
+autoplot(dynamic_forecast) +
+  labs(title = "Dynamic Forecast for Next 12 Months",
+       x = "Time",
+       y = "Energy Production (MWh)") +
+  theme_minimal()
+
+
+```
+```{r}
+library(lubridate)  # For working with date components
+library(forecast)   # For SARIMA and forecasting
+library(ggplot2)    # For enhanced plotting
+
+# Dynamic Forecast Updates Function
+dynamic_forecast_update <- function(data, current_date, forecast_horizon) {
+  # Filter data up to the current date
+  updated_data <- data[data$Date <= current_date, ]
+  
+  # Convert to time series object
+  updated_ts <- ts(
+    updated_data$Energy_Production_MWh,
+    start = c(year(min(updated_data$Date)), month(min(updated_data$Date))),
+    frequency = 12
+  )
+  
+  # Fit SARIMA model
+  sarima_model <- auto.arima(updated_ts, seasonal = TRUE)
+  
+  # Print the model summary
+  print(summary(sarima_model))
+  
+  # Forecast for the specified horizon
+  future_forecast <- forecast(sarima_model, h = forecast_horizon)
+  
+  # Convert forecast to data frame for custom plotting
+  forecast_df <- data.frame(
+    Date = seq(
+      from = current_date + months(1),
+      by = "month",
+      length.out = forecast_horizon
+    ),
+    Point.Forecast = future_forecast$mean,
+    Lo.80 = future_forecast$lower[, 1],
+    Hi.80 = future_forecast$upper[, 1],
+    Lo.95 = future_forecast$lower[, 2],
+    Hi.95 = future_forecast$upper[, 2]
+  )
+  
+  # Enhanced Plot
+  forecast_plot <- ggplot(forecast_df, aes(x = Date)) +
+    geom_line(aes(y = Point.Forecast), color = "blue", size = 1) +  # Forecasted values
+    geom_ribbon(aes(ymin = Lo.80, ymax = Hi.80), fill = "lightblue", alpha = 0.3) +  # 80% confidence interval
+    geom_ribbon(aes(ymin = Lo.95, ymax = Hi.95), fill = "blue", alpha = 0.2) +  # 95% confidence interval
+    labs(
+      title = paste("Dynamic Forecast from", current_date),
+      x = "Time",
+      y = "Energy Production (MWh)",
+      caption = "Shaded areas represent 80% and 95% confidence intervals"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Return the forecast and plot
+  return(list(forecast = future_forecast, plot = forecast_plot))
+}
+
+# Example Usage: Dynamic Forecast for Next 12 Months
+# Ensure `data` contains `Date` and `Energy_Production_MWh` columns
+dynamic_forecast <- dynamic_forecast_update(data, as.Date("2020-12-31"), 12)
+
+# Print forecast details
+print(dynamic_forecast$forecast)
+
+# Display the enhanced plot
+print(dynamic_forecast$plot)
+
+
+
+```
